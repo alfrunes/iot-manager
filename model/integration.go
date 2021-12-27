@@ -25,6 +25,20 @@ type Integration struct {
 	Credentials Credentials `json:"credentials" bson:"credentials"`
 }
 
+type CredentialType string
+
+const (
+	CredentialTypeSAS = "sas"
+)
+
+var credentialTypeRule = validation.In(
+	CredentialTypeSAS,
+)
+
+func (typ CredentialType) Validate() error {
+	return credentialTypeRule.Validate(typ)
+}
+
 //nolint:lll
 type Credentials struct {
 	Type             string            `json:"type" bson:"type"`
@@ -33,6 +47,7 @@ type Credentials struct {
 
 func (s Credentials) Validate() error {
 	return validation.ValidateStruct(&s,
+		validation.Field(&s.Type, validation.Required),
 		validation.Field(&s.ConnectionString),
 	)
 }

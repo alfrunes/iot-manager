@@ -223,12 +223,23 @@ func (db *DataStoreMongo) GetIntegrationById(ctx context.Context, integrationId 
 
 //nolint:lll
 func (db *DataStoreMongo) CreateIntegration(ctx context.Context, integration model.Integration) error {
-	collIntegrations := db.client.Database(DbName).Collection(CollNameIntegrations)
+	var tenantID string
+	if id := identity.FromContext(ctx); id != nil {
+		tenantID = id.Tenant
+	}
+	collIntegrations := db.client.
+		Database(DbName).
+		Collection(CollNameIntegrations)
 
-	// TODO: check if given tenant has already existing integration, forbid if true
+	// Force a single integration per tenant by utilizing unique '_id' index
+	integration.ID = uuid.NewSHA1(uuid.NameSpaceOID, []byte(tenantID))
 
-	_, err := collIntegrations.InsertOne(ctx, mstore.WithTenantID(ctx, integration))
-	if err != nil && err != mongo.ErrNoDocuments {
+	_, err := collIntegrations.
+		InsertOne(ctx, mstore.WithTenantID(ctx, integration))
+	if err != nil {
+		if isDuplicateKeyError(err) {
+			return store.ErrObjectExists
+		}
 		return errors.Wrapf(err, "failed to store integration %v", integration)
 	}
 

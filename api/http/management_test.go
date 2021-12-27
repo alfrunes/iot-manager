@@ -20,14 +20,21 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"net/textproto"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 
 	"github.com/mendersoftware/go-lib-micro/identity"
+	"github.com/mendersoftware/go-lib-micro/requestid"
+	"github.com/mendersoftware/go-lib-micro/rest.utils"
 
+	mapp "github.com/mendersoftware/iot-manager/app/mocks"
 	"github.com/mendersoftware/iot-manager/model"
 )
 
@@ -59,123 +66,125 @@ func GenerateJWT(id identity.Identity) string {
 	return JWT
 }
 
-// func TestGetIntegrations(t *testing.T) {
-// 	t.Parallel()
-// 	testCases := []struct {
-// 		Name string
+func TestGetIntegrations(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		Name string
 
-// 		Headers http.Header
+		Headers http.Header
 
-// 		App func(t *testing.T) *mapp.App
+		App func(t *testing.T) *mapp.App
 
-// 		StatusCode int
-// 		Response   interface{}
-// 	}{
-// 		{
-// 			Name: "ok",
+		StatusCode int
+		Response   interface{}
+	}{
+		{
+			Name: "ok",
 
-// 			Headers: http.Header{
-// 				"Authorization": []string{"Bearer " + GenerateJWT(identity.Identity{
-// 					IsUser:  true,
-// 					Subject: "829cbefb-70e7-438f-9ac5-35fd131c2111",
-// 					Tenant:  "123456789012345678901234",
-// 				})},
-// 			},
+			Headers: http.Header{
+				"Authorization": []string{"Bearer " + GenerateJWT(identity.Identity{
+					IsUser:  true,
+					Subject: "829cbefb-70e7-438f-9ac5-35fd131c2111",
+					Tenant:  "123456789012345678901234",
+				})},
+			},
 
-// 			App: func(t *testing.T) *mapp.App {
-// 				app := new(mapp.App)
-// 				app.On("GetIntegrations", contextMatcher).
-// 					Return([]model.Integration{
-// 						{
-// 							Provider: model.AzureIoTHub,
-// 							Credentials: model.Credentials{
-// 								Type: "connection_string",
-// 								Creds: &model.ConnectionString{
-// 									HostName: "localhost",
-// 									Key:      []byte("secret"),
-// 									Name:     "foobar",
-// 								},
-// 							},
-// 						},
-// 					}, nil)
-// 				return app
-// 			},
+			App: func(t *testing.T) *mapp.App {
+				app := new(mapp.App)
+				app.On("GetIntegrations", contextMatcher).
+					Return([]model.Integration{
+						{
+							ID:       uuid.Nil,
+							Provider: model.ProviderIoTHub,
+							Credentials: model.Credentials{
+								Type:             model.CredentialTypeSAS,
+								ConnectionString: validConnString,
+							},
+						},
+					}, nil)
+				return app
+			},
 
-// 			StatusCode: http.StatusOK,
-// 			Response: map[string]interface{}{
-// 				"connection_string": validConnString.String(),
-// 			},
-// 		},
-// 		{
-// 			Name: "ok empty settings",
+			StatusCode: http.StatusOK,
+			Response: []map[string]interface{}{{
+				"id":       uuid.Nil,
+				"provider": model.ProviderIoTHub,
+				"credentials": map[string]interface{}{
+					"type":              model.CredentialTypeSAS,
+					"connection_string": validConnString.String(),
+				},
+			}},
+		},
+		{
+			Name: "ok empty settings",
 
-// 			Headers: http.Header{
-// 				"Authorization": []string{"Bearer " + GenerateJWT(identity.Identity{
-// 					IsUser:  true,
-// 					Subject: "829cbefb-70e7-438f-9ac5-35fd131c2111",
-// 					Tenant:  "123456789012345678901234",
-// 				})},
-// 			},
+			Headers: http.Header{
+				"Authorization": []string{"Bearer " + GenerateJWT(identity.Identity{
+					IsUser:  true,
+					Subject: "829cbefb-70e7-438f-9ac5-35fd131c2111",
+					Tenant:  "123456789012345678901234",
+				})},
+			},
 
-// 			App: func(t *testing.T) *mapp.App {
-// 				app := new(mapp.App)
-// 				app.On("GetIntegrations", contextMatcher).Return([]model.Integration{}, nil)
-// 				return app
-// 			},
+			App: func(t *testing.T) *mapp.App {
+				app := new(mapp.App)
+				app.On("GetIntegrations", contextMatcher).Return([]model.Integration{}, nil)
+				return app
+			},
 
-// 			StatusCode: http.StatusOK,
-// 			Response:   model.Integration{},
-// 		},
-// 		{
-// 			Name: "error, invalid authorization header",
+			StatusCode: http.StatusOK,
+			Response:   []model.Integration{},
+		},
+		{
+			Name: "error, invalid authorization header",
 
-// 			Headers: http.Header{
-// 				textproto.CanonicalMIMEHeaderKey(requestid.RequestIdHeader): []string{
-// 					"829cbefb-70e7-438f-9ac5-35fd131c2111",
-// 				},
-// 				"Authorization": []string{"Bearer " + GenerateJWT(identity.Identity{
-// 					IsDevice: true,
-// 					Subject:  "829cbefb-70e7-438f-9ac5-35fd131c2f76",
-// 					Tenant:   "123456789012345678901234",
-// 				})},
-// 			},
-// 			StatusCode: http.StatusForbidden,
-// 			Response: rest.Error{
-// 				Err:       ErrMissingUserAuthentication.Error(),
-// 				RequestID: "829cbefb-70e7-438f-9ac5-35fd131c2111",
-// 			},
-// 		},
-// 	}
-// 	for i := range testCases {
-// 		tc := testCases[i]
-// 		t.Run(tc.Name, func(t *testing.T) {
-// 			t.Parallel()
-// 			var testApp *mapp.App
-// 			if tc.App == nil {
-// 				testApp = new(mapp.App)
-// 			} else {
-// 				testApp = tc.App(t)
-// 			}
-// 			defer testApp.AssertExpectations(t)
-// 			handler := NewRouter(testApp)
-// 			w := httptest.NewRecorder()
-// 			req, _ := http.NewRequest("GET",
-// 				"http://localhost"+
-// 					APIURLManagement+
-// 					APIURLSettings,
-// 				nil,
-// 			)
-// 			for key := range tc.Headers {
-// 				req.Header.Set(key, tc.Headers.Get(key))
-// 			}
+			Headers: http.Header{
+				textproto.CanonicalMIMEHeaderKey(requestid.RequestIdHeader): []string{
+					"829cbefb-70e7-438f-9ac5-35fd131c2111",
+				},
+				"Authorization": []string{"Bearer " + GenerateJWT(identity.Identity{
+					IsDevice: true,
+					Subject:  "829cbefb-70e7-438f-9ac5-35fd131c2f76",
+					Tenant:   "123456789012345678901234",
+				})},
+			},
+			StatusCode: http.StatusForbidden,
+			Response: rest.Error{
+				Err:       ErrMissingUserAuthentication.Error(),
+				RequestID: "829cbefb-70e7-438f-9ac5-35fd131c2111",
+			},
+		},
+	}
+	for i := range testCases {
+		tc := testCases[i]
+		t.Run(tc.Name, func(t *testing.T) {
+			t.Parallel()
+			var testApp *mapp.App
+			if tc.App == nil {
+				testApp = new(mapp.App)
+			} else {
+				testApp = tc.App(t)
+			}
+			defer testApp.AssertExpectations(t)
+			handler := NewRouter(testApp)
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest("GET",
+				"http://localhost"+
+					APIURLManagement+
+					APIURLIntegrations,
+				nil,
+			)
+			for key := range tc.Headers {
+				req.Header.Set(key, tc.Headers.Get(key))
+			}
 
-// 			handler.ServeHTTP(w, req)
-// 			assert.Equal(t, tc.StatusCode, w.Code, "invalid HTTP status code")
-// 			b, _ := json.Marshal(tc.Response)
-// 			assert.JSONEq(t, string(b), w.Body.String())
-// 		})
-// 	}
-// }
+			handler.ServeHTTP(w, req)
+			assert.Equal(t, tc.StatusCode, w.Code, "invalid HTTP status code")
+			b, _ := json.Marshal(tc.Response)
+			assert.JSONEq(t, string(b), w.Body.String())
+		})
+	}
+}
 
 // func TestSetSettings(t *testing.T) {
 // 	t.Parallel()
